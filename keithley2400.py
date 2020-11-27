@@ -5,7 +5,7 @@
 #gpib/rs232 com possible
 
 
-import visa
+import pyvisa
 import time
 import numpy
 
@@ -22,10 +22,18 @@ class Keithley2400:
         self.inst = None
           
     def open_com(self):
-        self.rm = visa.ResourceManager();
-        address = 'GPIB0::' + str(self.gpib_port) + '::INSTR'
-        self.inst = self.rm.open_resource(address)
-        print 'Com open'
+        self.rm = pyvisa.ResourceManager()
+        print(self.rm.list_resources())
+        self.inst = self.rm.open_resource('ASRL5::INSTR',write_termination = '\n',read_termination='\r')
+        self.inst.write("*IDN?")
+        print(self.inst.read('\r'))
+        #self.inst.write('*IDN?')
+        #IDN= self.inst.read_bytes(82)
+        #IDN = IDN.decode('utf-8')
+        #print(IDN)
+        #print(type(IDN))
+        #print(self.inst.read('\n'))
+        print('Com open')
 
     def close_com(self):
         #Set instrument in local mode
@@ -36,14 +44,22 @@ class Keithley2400:
         #Close visa session
         res = self.rm.close()
         return res
-        
+
+    def return_command_result(self,command):
+        self.inst.write(command)
+        #result = self.inst.read_bytes(40);
+        result = self.inst.read('\r')
+        return result
+    
     def send_query(self, command):
-        out = self.inst.query(command, self.delay);
-        res = self.inst.query("SYSTem:ERRor?");
+        out = self.return_command_result(command)
+        #out = self.inst.query(command, self.delay)
+        #res = self.inst.query("SYSTem:ERRor?")
+        res = self.return_command_result("SYSTem:ERRor?")
         return out
 
     def send_cmd(self, command):
-        res = self.inst.write(command);
+        res = self.inst.write(command)
         return res
 
     def config_voltmeter(self):
@@ -74,7 +90,7 @@ class Keithley2400:
 
     def setsource_volt(self, voltage):
         res = self.send_cmd(":SOUR:VOLT:LEV " + str(voltage))
-        print 'Voltage set'
+        print('Voltage set')
         return res
 
     def remote_sensing(self, mode):
@@ -84,29 +100,30 @@ class Keithley2400:
             res = self.send_cmd(":SYST:RSEN OFF")
         return res
 
-    def config_sourcemeter_cur(self):
+    def config_sourcemeter_cur(self, volt_sense_prot,volt_sense_range, cur_source_range ):
         res = self.send_cmd("*RST")
         res = self.send_cmd(":SOUR:FUNC CURR")
         res = self.send_cmd(":SOUR:CURR:MODE FIX")
-        res = self.send_cmd(":SOUR:CURR:RANG 100e-6")
+        res = self.send_cmd(":SOUR:CURR:RANG " + str(cur_source_range))
         res = self.send_cmd(":SOUR:CURR:LEV 0")
-        res = self.send_cmd(":SENS:FUNC \"CURR\"")
-        res = self.send_cmd(":SENS:CURR:PROT 100e-3")
-        res = self.send_cmd(":SENS:CURR:RANG 100e-6")
-        res = self.send_cmd(":TRIG:COUN " + str(10))
+        res = self.send_cmd(":SENS:FUNC \"VOLT\"")
+        res = self.send_cmd(":SENS:VOLT:PROT " + str(volt_sense_prot))
+        res = self.send_cmd(":SENS:VOLT:RANG " + str(volt_sense_range))
+        res = self.send_cmd(":TRIG:COUN "+str(self.trigger_count))
         return res
 
     def setsource_cur(self, current):
         res = self.send_cmd(":SOUR:CURR:LEV " + str(current))
+        print('Curren sent')
         return res
 
     def output_enable(self, state):
         if state=='on':
             mes = ':OUTP ON'
-            print 'Source on'
+            print('Source on')
         else:
             mes = ':OUTP OFF'
-            print 'Source off'
+            print('Source off')
         res = self.send_cmd(mes)
         return res
 
@@ -114,7 +131,8 @@ class Keithley2400:
         try:
             print('Measuring')
             out = self.send_query("READ?")
-        except visa.VisaIOError:
+            print(out)
+        except pyvisa.VisaIOError:
             print('The keithley instrument could not complete the read command')
             
         rawdata = numpy.array(out.split(','))
